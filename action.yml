@@ -1,0 +1,83 @@
+name: Security findings to Shortcut stories
+description: >-
+  Track each outstanding security finding as its own Shortcut story: created
+  when the finding appears, kept current while it persists, reopened if it
+  comes back, and moved to done once it is resolved. Takes a JSONL file of
+  findings so any scanner can feed it.
+
+inputs:
+  findings:
+    description: >-
+      Path to a JSONL file with one finding per line, each an object with
+      `key` (stable identity), `title`, and `body`, and optionally `story_type`.
+    required: true
+  shortcut-token:
+    description: Shortcut API token.
+    required: true
+  label:
+    description: Label applied to, and used to find, every story this action manages.
+    required: false
+    default: security-audit
+  team-id:
+    description: >-
+      Shortcut team (group) ID. New stories join that team and its started
+      iteration, and use its default workflow. Empty uses the workspace default.
+    required: false
+    default: ""
+  bug-prefixes:
+    description: >-
+      Comma-separated finding key prefixes filed as bugs rather than chores. A
+      finding's own `story_type` wins.
+    required: false
+    default: brakeman/
+  max-new-stories:
+    description: >-
+      Most stories to create in a single run. A larger batch is deferred to the
+      next run, so a mistake in key generation cannot flood the backlog.
+    required: false
+    default: "25"
+  close-resolved:
+    description: >-
+      Whether a story whose finding is absent should be moved to done. Pass
+      false when a scan did not complete: a scanner that could not run reports
+      nothing, which is indistinguishable from a clean result, so closing on
+      that run would retire findings that are still live.
+    required: false
+    default: "true"
+
+outputs:
+  outstanding:
+    description: Number of findings currently outstanding.
+    value: ${{ steps.sync.outputs.outstanding }}
+  created:
+    description: Number of stories created by this run.
+    value: ${{ steps.sync.outputs.created }}
+  updated:
+    description: Number of stories whose title or description this run refreshed.
+    value: ${{ steps.sync.outputs.updated }}
+  reopened:
+    description: Number of done stories moved back because the finding returned.
+    value: ${{ steps.sync.outputs.reopened }}
+  closed:
+    description: Number of stories moved to done because the finding is gone.
+    value: ${{ steps.sync.outputs.closed }}
+  deferred:
+    description: Number of new stories held back by max-new-stories.
+    value: ${{ steps.sync.outputs.deferred }}
+
+runs:
+  using: composite
+  steps:
+    - name: Sync findings to Shortcut stories
+      id: sync
+      shell: bash
+      env:
+        SHORTCUT_TOKEN: ${{ inputs.shortcut-token }}
+        STORY_LABEL: ${{ inputs.label }}
+        TEAM_ID: ${{ inputs.team-id }}
+        BUG_PREFIXES: ${{ inputs.bug-prefixes }}
+        MAX_NEW_STORIES: ${{ inputs.max-new-stories }}
+        CLOSE_RESOLVED: ${{ inputs.close-resolved }}
+        FINDINGS: ${{ inputs.findings }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: node "$GITHUB_ACTION_PATH/reconcile.js" "$FINDINGS"
